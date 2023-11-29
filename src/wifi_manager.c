@@ -41,7 +41,7 @@ Contains the freeRTOS task and all necessary support
 #include <freertos/event_groups.h>
 #include <freertos/timers.h>
 #include <http_app.h>
-#include <bootloader_random.h>
+#include "bootloader_random.h"
 #include <esp_wifi.h>
 #include <esp_event.h>
 #include <esp_netif.h>
@@ -275,16 +275,13 @@ void wifi_manager_init(){
 
 	esp_netif_sta = esp_netif_create_default_wifi_sta();
 	esp_netif_ap = esp_netif_create_default_wifi_ap();
-
-	/* event handler for the connection */
-	esp_event_handler_instance_t instance_wifi_event;
-	esp_event_handler_instance_t instance_ip_event;
-	ESP_ERROR_CHECK(esp_event_handler_instance_register(WIFI_EVENT, ESP_EVENT_ANY_ID, &wifi_manager_event_handler, NULL,&instance_wifi_event));
-	ESP_ERROR_CHECK(esp_event_handler_instance_register(IP_EVENT, ESP_EVENT_ANY_ID, &wifi_manager_event_handler, NULL,&instance_ip_event));
 }
 
 
 void wifi_manager_start(){
+	/* event handler for the connection - release for use by other subsystems */
+	ESP_ERROR_CHECK(esp_event_handler_unregister(WIFI_EVENT, ESP_EVENT_ANY_ID, &wifi_manager_event_handler));
+	ESP_ERROR_CHECK(esp_event_handler_unregister(IP_EVENT, ESP_EVENT_ANY_ID, &wifi_manager_event_handler));
 
 	/* disable the default wifi logging */
 	esp_log_level_set("wifi", ESP_LOG_NONE);
@@ -376,7 +373,7 @@ esp_err_t wifi_manager_erase_sta_config(){
 	else{
 		esp_err = ESP_FAIL;
 	}
-	
+
 	return esp_err;
 }
 
@@ -527,8 +524,7 @@ bool wifi_manager_fetch_wifi_sta_config(){
 
 		/* allocate buffer */
 		size_t sz = sizeof(wifi_settings);
-		uint8_t *buff = (uint8_t*)malloc(sizeof(uint8_t) * sz);
-		memset(buff, 0x00, sizeof(sz));
+		uint8_t *buff = (uint8_t*)calloc(sizeof(uint8_t) * sz, 1);
 
 		/* ssid */
 		sz = sizeof(wifi_manager_config_sta->sta.ssid);
@@ -1014,6 +1010,11 @@ char* wifi_manager_get_ip_info_json(){
 
 
 void wifi_manager_stop(){
+	/* event handler for the connection */
+	esp_event_handler_instance_t instance_wifi_event;
+	esp_event_handler_instance_t instance_ip_event;
+	ESP_ERROR_CHECK(esp_event_handler_instance_register(WIFI_EVENT, ESP_EVENT_ANY_ID, &wifi_manager_event_handler, NULL,&instance_wifi_event));
+	ESP_ERROR_CHECK(esp_event_handler_instance_register(IP_EVENT, ESP_EVENT_ANY_ID, &wifi_manager_event_handler, NULL,&instance_ip_event));
 
 	/* ask event loop nicely to exit */
 	wifi_manager_send_message(WM_ORDER_EXIT, NULL);
@@ -1041,10 +1042,8 @@ void wifi_manager_stop(){
 	ip_info_json = NULL;
 	free(wifi_manager_sta_ip);
 	wifi_manager_sta_ip = NULL;
-	if(wifi_manager_config_sta){
-		free(wifi_manager_config_sta);
-		wifi_manager_config_sta = NULL;
-	}
+	free(wifi_manager_config_sta);
+	wifi_manager_config_sta = NULL;
 	free(cb_ptr_arr);
 	cb_ptr_arr = NULL;
 
@@ -1091,7 +1090,7 @@ void wifi_manager_filter_unique( wifi_ap_record_t * aplist, uint16_t * aps) {
 		/* remove the identical SSID+authmodes */
 		for(int j=i+1; j<*aps;j++) {
 			wifi_ap_record_t * ap1 = &aplist[j];
-			if ( (strcmp((const char *)ap->ssid, (const char *)ap1->ssid)==0) && 
+			if ( (strcmp((const char *)ap->ssid, (const char *)ap1->ssid)==0) &&
 			     (ap->authmode == ap1->authmode) ) { /* same SSID, different auth mode is skipped */
 				/* save the rssi for the display */
 				if ((ap1->rssi) > (ap->rssi)) ap->rssi=ap1->rssi;
@@ -1261,7 +1260,7 @@ void wifi_manager( void * pvParameters ){
 		ap_config.ap.authmode = WIFI_AUTH_WPA2_PSK;
 		memcpy(ap_config.ap.password, wifi_settings.ap_pwd, sizeof(wifi_settings.ap_pwd));
 	}
-	
+
 
 	/* DHCP AP configuration */
 	esp_netif_dhcps_stop(esp_netif_ap); /* DHCP client/server must be stopped before setting new IP information. */
@@ -1336,7 +1335,8 @@ void wifi_manager( void * pvParameters ){
 
 				/* callback */
 				if(cb_ptr_arr[msg.code]) (*cb_ptr_arr[msg.code])( msg.param );
-				free(evt_scan_done);
+					free(evt_scan_done);
+					evt_scan_done = NULL;
 				}
 				break;
 
@@ -1608,8 +1608,12 @@ void wifi_manager( void * pvParameters ){
 				}
 
 				/* callback */
-				if(cb_ptr_arr[msg.code]) (*cb_ptr_arr[msg.code])( msg.param );
+				if(cb_ptr_arr[msg.code]) {
+					(*cb_ptr_arr[msg.code])( msg.param );
+				}
+
 				free(wifi_event_sta_disconnected);
+				msg.param = NULL;
 
 				break;
 
@@ -1663,7 +1667,7 @@ void wifi_manager( void * pvParameters ){
 
 			case WM_EVENT_STA_GOT_IP:
 				ESP_LOGI(TAG, "WM_EVENT_STA_GOT_IP");
-				ip_event_got_ip_t* ip_event_got_ip = (ip_event_got_ip_t*)msg.param; 
+				ip_event_got_ip_t* ip_event_got_ip = (ip_event_got_ip_t*)msg.param;
 				sta_was_connected = true;
 				uxBits = xEventGroupGetBits(wifi_manager_event_group);
 
@@ -1717,8 +1721,12 @@ void wifi_manager( void * pvParameters ){
 #endif // WIFI_MANAGER_SHUTDOWN_AP_TIMER >= 0
 
 				/* callback and free memory allocated for the void* param */
-				if(cb_ptr_arr[msg.code]) (*cb_ptr_arr[msg.code])( msg.param );
+				if(cb_ptr_arr[msg.code]) {
+					(*cb_ptr_arr[msg.code])( msg.param );
+				}
+
 				free(ip_event_got_ip);
+				msg.param = NULL;
 
 				break;
 
