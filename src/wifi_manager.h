@@ -88,7 +88,7 @@ extern "C" {
  * @brief Time (in ms) to wait before scan attempts
  * Defines the time (in ms) to wait after failure before trying to start a scan again.
  */
-#define WIFI_MANAGER_SCAN_RETRY				( 500 )
+#define WIFI_MANAGER_SCAN_RETRY				( 2500 )
 
 
 /** @brief Defines the task priority of the wifi_manager.

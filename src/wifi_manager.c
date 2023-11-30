@@ -279,9 +279,11 @@ void wifi_manager_init(){
 
 
 void wifi_manager_start(){
-	/* event handler for the connection - release for use by other subsystems */
-	ESP_ERROR_CHECK(esp_event_handler_unregister(WIFI_EVENT, ESP_EVENT_ANY_ID, &wifi_manager_event_handler));
-	ESP_ERROR_CHECK(esp_event_handler_unregister(IP_EVENT, ESP_EVENT_ANY_ID, &wifi_manager_event_handler));
+	/* event handler for the connection */
+	esp_event_handler_instance_t instance_wifi_event;
+	esp_event_handler_instance_t instance_ip_event;
+	ESP_ERROR_CHECK(esp_event_handler_instance_register(WIFI_EVENT, ESP_EVENT_ANY_ID, &wifi_manager_event_handler, NULL,&instance_wifi_event));
+	ESP_ERROR_CHECK(esp_event_handler_instance_register(IP_EVENT, ESP_EVENT_ANY_ID, &wifi_manager_event_handler, NULL,&instance_ip_event));
 
 	/* disable the default wifi logging */
 	esp_log_level_set("wifi", ESP_LOG_NONE);
@@ -775,7 +777,7 @@ static void wifi_manager_event_handler(void* arg, esp_event_base_t event_base, i
 			the Wi-Fi driver to free the internal memory which is allocated during the scan (do not forget to do this)!
 		 */
 		case WIFI_EVENT_SCAN_DONE:
-			ESP_LOGD(TAG, "WIFI_EVENT_SCAN_DONE");
+			ESP_LOGI(TAG, "WIFI_EVENT_SCAN_DONE");
 	    	xEventGroupClearBits(wifi_manager_event_group, WIFI_MANAGER_SCAN_BIT);
 			wifi_event_sta_scan_done_t* event_sta_scan_done = (wifi_event_sta_scan_done_t*)malloc(sizeof(wifi_event_sta_scan_done_t));
 			*event_sta_scan_done = *((wifi_event_sta_scan_done_t*)event_data);
@@ -1010,11 +1012,9 @@ char* wifi_manager_get_ip_info_json(){
 
 
 void wifi_manager_stop(){
-	/* event handler for the connection */
-	esp_event_handler_instance_t instance_wifi_event;
-	esp_event_handler_instance_t instance_ip_event;
-	ESP_ERROR_CHECK(esp_event_handler_instance_register(WIFI_EVENT, ESP_EVENT_ANY_ID, &wifi_manager_event_handler, NULL,&instance_wifi_event));
-	ESP_ERROR_CHECK(esp_event_handler_instance_register(IP_EVENT, ESP_EVENT_ANY_ID, &wifi_manager_event_handler, NULL,&instance_ip_event));
+	/* event handler for the connection - release for use by other subsystems */
+	ESP_ERROR_CHECK(esp_event_handler_unregister(WIFI_EVENT, ESP_EVENT_ANY_ID, &wifi_manager_event_handler));
+	ESP_ERROR_CHECK(esp_event_handler_unregister(IP_EVENT, ESP_EVENT_ANY_ID, &wifi_manager_event_handler));
 
 	/* ask event loop nicely to exit */
 	wifi_manager_send_message(WM_ORDER_EXIT, NULL);
@@ -1291,10 +1291,10 @@ void wifi_manager( void * pvParameters ){
 
 	/* wifi scanner config */
 	wifi_scan_config_t scan_config = {
-		.ssid = 0,
-		.bssid = 0,
+		.ssid = NULL,
+		.bssid = NULL,
 		.channel = 0,
-		.show_hidden = true
+		.show_hidden = false
 	};
 
 	/* enqueue first event: load previous config */
@@ -1304,7 +1304,8 @@ void wifi_manager( void * pvParameters ){
 	/* main processing loop */
 	xSemaphoreTake(wifi_manager_event_loop_mutex, 0);
 	while(!finished){
-		possibly_do_hardcoded_connect();
+		/* TODO: make it configurable */
+		/* possibly_do_hardcoded_connect(); */
 
 		/* the xTicksToWait argument mustn't be infinite, otherwise the checks for
 		 * the hardcoded AP may never happen */
@@ -1346,6 +1347,7 @@ void wifi_manager( void * pvParameters ){
 				/* if a scan is already in progress this message is simply ignored thanks to the WIFI_MANAGER_SCAN_BIT uxBit */
 				uxBits = xEventGroupGetBits(wifi_manager_event_group);
 				if(! (uxBits & WIFI_MANAGER_SCAN_BIT) ){
+
 					if( esp_wifi_scan_start(&scan_config, false) == ESP_OK ){
 						xEventGroupSetBits(wifi_manager_event_group, WIFI_MANAGER_SCAN_BIT);
 					}
