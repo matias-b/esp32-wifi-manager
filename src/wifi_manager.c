@@ -47,6 +47,7 @@ Contains the freeRTOS task and all necessary support
 #include <esp_netif.h>
 #include <esp_wifi_types.h>
 #include <esp_log.h>
+#include <esp_mac.h>
 #include <nvs.h>
 #include <nvs_flash.h>
 #include <mdns.h>
@@ -1244,7 +1245,7 @@ void wifi_manager( void * pvParameters ){
 		&& ((strlen((char *)wifi_settings.ap_ssid) + 6) < sizeof(wifi_settings.ap_ssid))
 		&& (esp_read_mac(mac_address, ESP_MAC_WIFI_STA) == ESP_OK)){
 		char buf[6];
-		sprintf(buf, " %02x%02x", (unsigned int)mac_address[4], (unsigned int)mac_address[5]);
+		sprintf(buf, "-%02x%02x", (unsigned int)mac_address[4], (unsigned int)mac_address[5]);
 		strcat((char *)wifi_settings.ap_ssid, buf);
 		mac_appended_to_ssid = true;
 	}
