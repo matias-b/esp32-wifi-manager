@@ -1241,12 +1241,18 @@ void wifi_manager( void * pvParameters ){
 #ifdef CONFIG_WIFI_MANAGER_APPEND_MAC
 	/* Augment AP SSID with last bit of MAC address to make it more unique */
 	uint8_t mac_address[6];
+	size_t ap_ssid_len = strlen((char *)wifi_settings.ap_ssid);
+	size_t ap_ssid_suffix_len = 13; /* TODO: make it dynamic */
 	if(!mac_appended_to_ssid
-		&& ((strlen((char *)wifi_settings.ap_ssid) + 6) < sizeof(wifi_settings.ap_ssid))
+		&& ((ap_ssid_len + ap_ssid_suffix_len) < sizeof(wifi_settings.ap_ssid))
 		&& (esp_read_mac(mac_address, ESP_MAC_WIFI_STA) == ESP_OK)){
-		char buf[6];
-		sprintf(buf, "-%02x%02x", (unsigned int)mac_address[4], (unsigned int)mac_address[5]);
-		strcat((char *)wifi_settings.ap_ssid, buf);
+		char buf[64];
+		snprintf(buf, sizeof(buf), "-%02x%02x%02x%02x%02x%02x",
+			(unsigned int)mac_address[0], (unsigned int)mac_address[1],
+			(unsigned int)mac_address[2], (unsigned int)mac_address[3],
+			(unsigned int)mac_address[4], (unsigned int)mac_address[5]
+			);
+		strncat((char *)wifi_settings.ap_ssid, buf, sizeof(wifi_settings.ap_ssid) - ap_ssid_len);
 		mac_appended_to_ssid = true;
 	}
 #endif // CONFIG_WIFI_MANAGER_APPEND_MAC
